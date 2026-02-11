@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Councils - 对议牌</title>
+    <style>
+        :root { --gold: #c5a059; --gold-br: #f3d9a9; --red-p: #d13d40; --panel: rgba(15, 15, 15, 0.98); }
+        body { font-family: 'Garamond', serif; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; background-color: #050505; color: #dcdcdc; min-height: 100vh; }
+        #gameContainer { width: 95%; max-width: 600px; padding: 15px; border: 1px solid var(--gold); background: var(--panel); box-shadow: 0 0 30px #000; position: relative; }
+        header { text-align: center; border-bottom: 1px solid var(--gold); margin-bottom: 10px; }
+        header h1 { font-size: 20px; color: var(--gold-br); letter-spacing: 4px; margin: 5px; }
+
+        .dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-bottom: 10px; }
+        .stat-card { background: rgba(197, 160, 89, 0.1); border: 1px solid #333; padding: 5px; text-align: center; }
+        .stat-value { font-size: 16px; color: var(--gold); font-weight: bold; }
+
+        #comment-section { background: rgba(30, 30, 30, 0.6); border: 1px double var(--gold-br); padding: 12px; margin: 10px 0; min-height: 55px; border-left: 4px solid var(--gold); }
+        #comment-name { color: var(--gold-br); font-weight: bold; font-size: 13px; margin-bottom: 4px; display: block; }
+        #comment-text { font-style: italic; color: #ddd; font-size: 14px; line-height: 1.4; }
+
+        .battle-layout { display: flex; gap: 10px; margin-bottom: 10px; }
+        .player-box { flex: 1; padding: 10px; border: 1px solid #222; text-align: center; min-height: 120px; position: relative; }
+        .hand { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+        
+        .card { width: 40px; height: 58px; background: #fff; border-radius: 3px; color: #000; display: flex; flex-direction: column; justify-content: center; align-items: center; font-weight: bold; cursor: pointer; font-size: 12px; border: 1px solid #999; }
+        .card.red-suit { color: var(--red-p); }
+        .card.selected { transform: translateY(-5px); border: 2px solid var(--gold); box-shadow: 0 0 8px var(--gold); }
+        .card.ai-hidden { background: #222; border-color: #444; color: transparent !important; pointer-events: none; }
+
+        .settlement-hall { border: 1px dashed var(--gold); padding: 8px; text-align: center; font-size: 13px; color: var(--gold-br); min-height: 20px; }
+        .controls { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; margin-top: 15px; }
+        button { background: #000; border: 1px solid var(--gold); color: var(--gold); padding: 8px 12px; cursor: pointer; font-size: 12px; }
+        button:hover { background: var(--gold); color: #000; }
+
+        .archive { width: 95%; max-width: 600px; margin-top: 15px; border: 1px solid #333; padding: 10px; font-size: 11px; background: rgba(0,0,0,0.3); }
+        .log-container { max-height: 180px; overflow-y: auto; }
+        .round-row { border-bottom: 1px solid #222; padding: 6px 0; }
+        .mini-card { padding: 0 2px; font-weight: bold; border: 1px solid #555; background: #eee; border-radius: 2px; margin-right: 2px; color: #111; }
+        .mini-card.red { color: var(--red-p); }
+
+        #rule-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: #1a1a1a; border: 2px solid var(--gold); padding: 25px; max-width: 450px; position: relative; color: #ccc; font-size: 13px; line-height: 1.7; }
+        .rule-item { margin-bottom: 10px; }
+        .highlight { color: var(--gold-br); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <header><h1>COUNCILS 对议牌</h1></header>
+
+    <div class="dashboard">
+        <div class="stat-card">Player A<br><span id="s-p" class="stat-value">0</span></div>
+        <div class="stat-card">Round<br><span id="s-r" class="stat-value">-</span></div>
+        <div class="stat-card">Deck<br><span id="s-d" class="stat-value">54</span></div>
+        <div class="stat-card">Opponent<br><span id="s-ai" class="stat-value">0</span></div>
+    </div>
+
+    <div id="comment-section">
+        <span id="comment-name">枢密院侍从</span>
+        <span id="comment-text">“请选择对战模式以开启议程。”</span>
+    </div>
+
+    <div class="battle-layout" id="field" style="opacity:0.3; pointer-events:none;">
+        <div class="player-box">
+            <div id="role-p" style="font-size:10px; color:var(--gold)">-</div>
+            <div class="hand" id="hand-p"></div>
+        </div>
+        <div class="player-box">
+            <div id="role-ai" style="font-size:10px; color:var(--gold)">-</div>
+            <div class="hand" id="hand-ai"></div>
+        </div>
+    </div>
+
+    <div id="status" class="settlement-hall">等待开局...</div>
+
+    <div class="controls">
+        <button id="btn-pve" onclick="start(true)">人机模式</button>
+        <button id="btn-pvp" onclick="start(false)">双人模式</button>
+        <button id="btn-sub" style="display:none;" onclick="settle()">提交提案</button>
+        <button id="btn-next" style="display:none;" onclick="next()">下一轮</button>
+        <button onclick="toggleRules(true)">查看法则</button>
+        <button onclick="softReset()">重置</button>
+    </div>
+</div>
+
+<div class="archive">
+    <div style="color:var(--gold); border-bottom: 1px solid #444; padding-bottom:3px;">🏛️ 议事档案</div>
+    <div id="log" class="log-container"></div>
+</div>
+
+<div id="rule-modal">
+    <div class="modal-content">
+        <h3 style="color:var(--gold); margin-top:0; text-align:center;">枢密院议事法则</h3>
+        <div class="rule-item">1. <span class="highlight">双相扣牌：</span>双方每轮可选择 1 或 2 张手牌暗置。</div>
+        <div class="rule-item">2. <span class="highlight">同色判定：</span>若场上所有弃牌颜色一致，则该颜色的对色方直接获胜（全红则黑方胜，反之亦然）。</div>
+        <div class="rule-item">3. <span class="highlight">点数计算：</span>议点 = (该色总点数 / 该色张数)，结果<span class="highlight">向上取整</span>。JQK算11-13点，A算1点。</div>
+        <div class="rule-item">4. <span class="highlight">王牌归属：</span><br>
+            - <span style="color:var(--red-p)">大王：</span>强制视为红色，点数为 0。<br>
+            - <span>小王：</span>强制视为黑色，点数为 0。</div>
+        <div class="rule-item">5. <span class="highlight">因果翻转：</span>若场上出现<span class="highlight">单数张王牌</span>，该轮最终的胜负判定将发生逆转。</div>
+        <button onclick="toggleRules(false)" style="width:100%; margin-top:10px; background:none; color:var(--gold); border:1px solid var(--gold); padding:8px; cursor:pointer;">知晓了</button>
+    </div>
+</div>
+
+<script>
+    let deck = [], pHand = [], aiHand = [], pSel = [], aiSel = [], pScore = 0, aiScore = 0, round = 0, isPvE = true, pIsRed = true;
+
+    const charMap = {
+        "伯爵代理人": ["物极必反，盛极必衰，不是吗？", "沉默在此时未必不是一件坏事。", "一切都会尘埃落定，我的朋友。"],
+        "枢密卿": ["一切都会尘埃落定，我的朋友。", "你需要尽快做出决定，时间不多了。", "沉默在此时未必不是一件坏事。"],
+        "老练执政官": ["敏锐的嗅觉。看来一切都在计算中。", "也许您可以再考虑一下别的策略。", "真相昭然若揭，我们必须采取行动。"],
+        "书记员": ["重头再来，或许您还有再来一次的机会。", "真相昭然若揭，我们必须采取行动。", "语言的力量在于感动人心。"],
+        "陪审团代表": ["精彩的观点碰撞，请继续讨论吧。", "语言的力量在于感动人心。", "一切都会尘埃落定，我的朋友。"],
+        "占卜师": ["命运指引您相信正位者的直觉。", "我看到了你悲惨的未来。", "愿均衡保佑您，这是神的旨意。"],
+        "神父": ["愿均衡保佑您，这是神的旨意。", "也许您可以再考虑一下别的策略。", "昂首挺胸，坚定你的意志。"],
+        "教授": ["博弈是科学的，一切选择都有迹可循。", "敏锐的嗅觉。看来一切都在计算中。", "精彩的观点碰撞，请继续讨论吧。"],
+        "将军": ["谈判总会破裂，唯有对抗长存。", "昂首挺胸，坚定你的意志。", "你需要尽快做出决定，时间不多了。"],
+        "国王": ["物极必反，盛极必衰，不是吗？", "昂首挺胸，坚定你的意志。", "你需要尽快做出决定，时间不多了。"],
+        "骑士": ["昂首挺胸，坚定你的意志。", "谈判总会破裂，唯有对抗长存。", "命运指引您相信正位者的直觉。"]
+    };
+
+    function speak() {
+        const names = Object.keys(charMap);
+        const name = names[Math.floor(Math.random()*names.length)];
+        const lines = charMap[name];
+        document.getElementById('comment-name').innerText = name;
+        document.getElementById('comment-text').innerText = `“${lines[Math.floor(Math.random()*lines.length)]}”`;
+    }
+
+    function toggleRules(s) { document.getElementById('rule-modal').style.display = s?'flex':'none'; }
+
+    function softReset() {
+        pScore = 0; aiScore = 0; round = 0; pHand = []; aiHand = []; pSel = []; aiSel = [];
+        document.getElementById('log').innerHTML = '';
+        document.getElementById('status').innerText = "议程已重置。";
+        document.getElementById('field').style.opacity = "0.3";
+        document.getElementById('field').style.pointerEvents = "none";
+        document.getElementById('btn-pve').style.display = 'inline-block';
+        document.getElementById('btn-pvp').style.display = 'inline-block';
+        document.getElementById('btn-sub').style.display = 'none';
+        document.getElementById('btn-next').style.display = 'none';
+        update();
+    }
+
+    function start(pve) {
+        isPvE = pve; round = 1; pIsRed = true; deck = [];
+        const suits = ['♥','♦','♠','♣'], vals = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+        suits.forEach(s => vals.forEach(v => deck.push({v, s, c: (s=='♥'||s=='♦'?'red':'black')})));
+        deck.push({v:'大王', s:'🃏', c:'red', j:true}, {v:'小王', s:'🃏', c:'black', j:true});
+        deck.sort(() => Math.random()-0.5);
+        draw();
+        document.getElementById('btn-pve').style.display = 'none';
+        document.getElementById('btn-pvp').style.display = 'none';
+        document.getElementById('btn-sub').style.display = 'inline-block';
+        document.getElementById('field').style.opacity = "1";
+        document.getElementById('field').style.pointerEvents = "all";
+        if(isPvE) aiPick();
+        speak(); update();
+    }
+
+    function draw() {
+        while(pHand.length < 4 && deck.length > 0) pHand.push(deck.pop());
+        while(aiHand.length < 4 && deck.length > 0) aiHand.push(deck.pop());
+    }
+
+    // AI 出牌逻辑修改：随机选择 1 张或 2 张
+    function aiPick() { 
+        const count = Math.floor(Math.random() * 2) + 1; // 1 或 2
+        aiSel = [0,1,2,3].sort(() => Math.random()-0.5).slice(0, count); 
+    }
+
+    function settle() {
+        if(!pSel.length || (!isPvE && !aiSel.length)) return alert("请完成您的扣牌提案。");
+        const pCards = pSel.map(i => pHand[i]);
+        const aiCards = aiSel.map(i => aiHand[i]);
+        const pool = [...pCards, ...aiCards];
+        const colors = new Set(pool.map(c=>c.c));
+        let winColor = '', msg = '';
+
+        const getPt = (v) => { if(v=='A')return 1; if(v=='J')return 11; if(v=='Q')return 12; if(v=='K')return 13; return parseInt(v)||0; };
+        const calc = (col) => {
+            const sub = pool.filter(c => c.c == col);
+            if(!sub.length) return 0;
+            // 向上取整
+            return Math.ceil(sub.reduce((acc, card) => acc + (card.j ? 0 : getPt(card.v)), 0) / sub.length);
+        };
+
+        if(colors.size == 1) {
+            winColor = (pool[0].c == 'red' ? 'BLACK' : 'RED');
+            msg = `同色落败(${pool[0].c=='red'?'红':'黑'})`;
+        } else {
+            const rA = calc('red'), bA = calc('black');
+            winColor = rA > bA ? 'RED' : (bA > rA ? 'BLACK' : 'BOTH');
+            // 王牌翻转逻辑
+            if(pool.filter(c=>c.j).length % 2 != 0 && winColor !== 'BOTH') {
+                winColor = (winColor == 'RED' ? 'BLACK' : 'RED');
+                msg = `红${rA} vs 黑${bA} (王牌翻转)`;
+            } else {
+                msg = `红${rA} vs 黑${bA}`;
+            }
+        }
+
+        if(winColor == 'RED') (pIsRed ? pScore++ : aiScore++);
+        else if(winColor == 'BLACK') (!pIsRed ? pScore++ : aiScore++);
+        else { pScore++; aiScore++; }
+
+        const log = document.getElementById('log');
+        const mini = (cards) => cards.map(c=>`<span class="mini-card ${c.c=='red'?'red':''}">${c.s}${c.v}</span>`).join('');
+        log.innerHTML = `<div class="round-row">R${round} [${msg}] <b>${winColor}胜</b><br>P1: ${mini(pCards)} | P2: ${mini(aiCards)}</div>` + log.innerHTML;
+
+        pHand = pHand.filter((_,i)=>!pSel.includes(i));
+        aiHand = aiHand.filter((_,i)=>!aiSel.includes(i));
+        pSel = []; aiSel = [];
+        document.getElementById('btn-sub').style.display = 'none';
+        document.getElementById('btn-next').style.display = 'inline-block';
+        document.getElementById('status').innerText = `本轮判定：${winColor}方胜利`;
+        speak(); update(true);
+    }
+
+    function next() {
+        pIsRed = !pIsRed; round++; draw();
+        if(!pHand.length) return alert("牌堆已空，议事结束。");
+        document.getElementById('btn-sub').style.display = 'inline-block';
+        document.getElementById('btn-next').style.display = 'none';
+        if(isPvE) aiPick();
+        update();
+    }
+
+    function update(reveal = false) {
+        document.getElementById('s-p').innerText = pScore;
+        document.getElementById('s-ai').innerText = aiScore;
+        document.getElementById('s-r').innerText = round || '-';
+        document.getElementById('s-d').innerText = deck.length;
+        document.getElementById('role-p').innerText = pIsRed ? "红方(攻)" : "黑方(守)";
+        document.getElementById('role-ai').innerText = pIsRed ? "黑方(守)" : "红方(攻)";
+
+        const render = (container, hand, sel, isOpponent) => {
+            container.innerHTML = '';
+            hand.forEach((c, i) => {
+                const d = document.createElement('div');
+                // 遮蔽逻辑：PvE模式下结算前，AI区域不显示选中状态
+                if(isOpponent && isPvE && !reveal) {
+                    d.className = `card ai-hidden`;
+                } else {
+                    const isSelected = sel.includes(i);
+                    d.className = `card ${c.c=='red'?'red-suit':''} ${isSelected?'selected':''}`;
+                    d.innerHTML = `<span>${c.v}</span><small>${c.s}</small>`;
+                    d.onclick = () => {
+                        if(isOpponent && isPvE) return;
+                        if(sel.includes(i)) sel.splice(sel.indexOf(i),1);
+                        else if(sel.length < 2) sel.push(i);
+                        update();
+                    };
+                }
+                container.appendChild(d);
+            });
+        };
+        render(document.getElementById('hand-p'), pHand, pSel, false);
+        render(document.getElementById('hand-ai'), aiHand, aiSel, true);
+    }
+</script>
+</body>
+</html>
